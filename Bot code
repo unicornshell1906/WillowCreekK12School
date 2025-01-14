@@ -1,0 +1,461 @@
+from flask import Flask
+from threading import Thread
+
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# Call keep_alive function to start the Flask server
+keep_alive()
+
+const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const express = require('express');
+const app = express();
+const port = 3000;  // Replit assigns a port to your project
+
+// Set up a simple web server to prevent Replit from sleeping
+app.get('/', (req, res) => {
+  res.send('Bot is running...');
+});
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+
+// Create a new client instance
+const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+});
+
+// Connect to SQLite database
+const db = new sqlite3.Database(path.resolve(__dirname, 'school.db'), (err) => {
+    if (err) {
+        console.error('Could not connect to database', err);
+    } else {
+        console.log('Connected to the database');
+    }
+});
+
+// Create tables if they do not exist
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS students (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        verified INTEGER NOT NULL DEFAULT 0
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS attendance_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        status TEXT NOT NULL,
+        log_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    )`);
+
+    // New table for behavior logs
+    db.run(`CREATE TABLE IF NOT EXISTS behavior_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER,
+        reason TEXT NOT NULL,
+        log_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(student_id) REFERENCES students(id)
+    )`);
+});
+
+// Replace these with your actual role IDs
+const ADMIN_ROLE_ID = '1322315030645051392';
+const TEACHER_ROLE_ID = '1322991621804920942';
+const DATABASE_RESET_ROLE_ID = '1321184284765327423';
+
+// Register slash commands
+const commands = [
+    {
+        name: 'add_student',
+        description: 'Add a student to the database',
+        options: [
+            {
+                name: 'student_name',
+                type: 3, // STRING
+                description: 'Name of the student',
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'remove_student',
+        description: 'Remove a student from the database',
+        options: [
+            {
+                name: 'student_name',
+                type: 3, // STRING
+                description: 'Name of the student',
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'verify_student',
+        description: 'Verify yourself as a student'
+    },
+    {
+        name: 'log_attendance',
+        description: 'Log attendance for a student',
+        options: [
+            {
+                name: 'student_name',
+                type: 3, // STRING
+                description: 'Name of the student',
+                required: true
+            },
+            {
+                name: 'status',
+                type: 3, // STRING
+                description: 'Attendance status (present, absent, late)',
+                required: true
+            }
+        ]
+    },
+    {
+        name: 'show_attendance',
+        description: 'Show the attendance log'
+    },
+    {
+        name: 'reset_database',
+        description: 'Reset the entire database by removing all students and attendance records',
+    },
+    {
+        name: 'log_behavior',
+        description: 'Log behavior for a student',
+        options: [
+            {
+                name: 'student_name',
+                type: 3, // STRING
+                description: 'Name of the student',
+                required: true
+            },
+            {
+                name: 'reason',
+                type: 3, // STRING
+                description: 'Reason for the behavior log',
+                required: true
+            }
+        ]
+    }
+];
+
+const rest = new REST({ version: '10' }).setToken('MTMyMzExMTY1OTQyMTcwMDEwOA.G0M3DI.2XgQCPMf-V9l7eWmRYlMry412VXm66Yj3JivxI');
+
+(async () => {
+    try {
+        console.log('Started refreshing application (/) commands.');
+
+        await rest.put(
+            Routes.applicationGuildCommands('1323111659421700108', '1320508646156927097'),
+            { body: commands }
+        );
+
+        console.log('Successfully reloaded application (/) commands.');
+    } catch (error) {
+        console.error(error);
+    }
+})();
+
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}`);
+});
+
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+
+    const { commandName, options, channelId } = interaction;
+    const logChannelId = '1323738463287115776'; // Replace with your log channel ID
+
+    // Log command usage
+    if (channelId !== logChannelId) {
+        const logChannel = await client.channels.fetch(logChannelId);
+        if (logChannel) {
+            const logEmbed = new EmbedBuilder()
+                .setColor(0x0000ff)
+                .setTitle('Command Used')
+                .setDescription(`Command \`${commandName}\` was used by ${interaction.user.tag} in <#${channelId}>`)
+                .addFields(
+                    { name: 'Options', value: JSON.stringify(options.data, null, 2) }
+                )
+                .setTimestamp();
+
+            logChannel.send({ embeds: [logEmbed] });
+        }
+    }
+
+    if (commandName === 'add_student') {
+        if (!interaction.member.roles.cache.has(ADMIN_ROLE_ID)) {
+            const embed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle('Permission Denied')
+                .setDescription('You do not have the required role to use this command.');
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        const studentName = options.getString('student_name');
+        db.get('SELECT * FROM students WHERE name = ?', [studentName], (err, row) => {
+            if (err) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Database Error')
+                    .setDescription('Could not access the database.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            if (row) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xffa500)
+                    .setTitle('Student Exists')
+                    .setDescription(`${studentName} is already in the database.`);
+                return interaction.reply({ embeds: [embed] });
+            } else {
+                db.run('INSERT INTO students (name) VALUES (?)', [studentName], (err) => {
+                    if (err) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('Database Error')
+                            .setDescription('Failed to add student.');
+                        return interaction.reply({ embeds: [embed] });
+                    }
+                    const embed = new EmbedBuilder()
+                        .setColor(0x00ff00)
+                        .setTitle('Student Added')
+                        .setDescription(`Added ${studentName} to the database.`);
+                    interaction.reply({ embeds: [embed] });
+                });
+            }
+        });
+    } else if (commandName === 'remove_student') {
+        if (!interaction.member.roles.cache.has(ADMIN_ROLE_ID)) {
+            const embed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle('Permission Denied')
+                .setDescription('You do not have the required role to use this command.');
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        const studentName = options.getString('student_name');
+        db.get('SELECT * FROM students WHERE name = ?', [studentName], (err, row) => {
+            if (err) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Database Error')
+                    .setDescription('Could not access the database.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            if (row) {
+                db.run('DELETE FROM students WHERE name = ?', [studentName], (err) => {
+                    if (err) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('Database Error')
+                            .setDescription('Failed to remove student.');
+                        return interaction.reply({ embeds: [embed] });
+                    }
+                    const embed = new EmbedBuilder()
+                        .setColor(0x00ff00)
+                        .setTitle('Student Removed')
+                        .setDescription(`Removed ${studentName} from the database.`);
+                    interaction.reply({ embeds: [embed] });
+                });
+            } else {
+                const embed = new EmbedBuilder()
+                    .setColor(0xffa500)
+                    .setTitle('Student Not Found')
+                    .setDescription(`${studentName} is not in the database.`);
+                interaction.reply({ embeds: [embed] });
+            }
+        });
+    } else if (commandName === 'verify_student') {
+        const studentName = interaction.user.username;
+        db.get('SELECT * FROM students WHERE name = ?', [studentName], (err, row) => {
+            if (err) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Database Error')
+                    .setDescription('Could not access the database.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            if (row) {
+                db.run('UPDATE students SET verified = 1 WHERE name = ?', [studentName], (err) => {
+                    if (err) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('Verification Failed')
+                            .setDescription('Failed to verify student.');
+                        return interaction.reply({ embeds: [embed] });
+                    }
+                    const embed = new EmbedBuilder()
+                        .setColor(0x00ff00)
+                        .setTitle('Student Verified')
+                        .setDescription(`${studentName} has been verified.`);
+                    interaction.reply({ embeds: [embed] });
+                });
+            } else {
+                const embed = new EmbedBuilder()
+                    .setColor(0xffa500)
+                    .setTitle('Student Not Found')
+                    .setDescription(`${studentName} is not in the database.`);
+                interaction.reply({ embeds: [embed] });
+            }
+        });
+    } else if (commandName === 'log_attendance') {
+        if (!interaction.member.roles.cache.has(TEACHER_ROLE_ID)) {
+            const embed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle('Permission Denied')
+                .setDescription('You do not have the required role to use this command.');
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        const studentName = options.getString('student_name');
+        const status = options.getString('status');
+        db.get('SELECT * FROM students WHERE name = ? AND verified = 1', [studentName], (err, row) => {
+            if (err) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Database Error')
+                    .setDescription('Could not access the database.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            if (row) {
+                db.run('INSERT INTO attendance_log (student_id, status) VALUES (?, ?)', [row.id, status], (err) => {
+                    if (err) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('Attendance Log Failed')
+                            .setDescription('Failed to log attendance.');
+                        return interaction.reply({ embeds: [embed] });
+                    }
+                    const embed = new EmbedBuilder()
+                        .setColor(0x00ff00)
+                        .setTitle('Attendance Logged')
+                        .setDescription(`Logged ${studentName}'s attendance as ${status}.`);
+                    interaction.reply({ embeds: [embed] });
+                });
+            } else {
+                const embed = new EmbedBuilder()
+                    .setColor(0xffa500)
+                    .setTitle('Student Not Found or Not Verified')
+                    .setDescription(`${studentName} is not verified or not in the database.`);
+                interaction.reply({ embeds: [embed] });
+            }
+        });
+    } else if (commandName === 'show_attendance') {
+        db.all('SELECT students.name, attendance_log.status, attendance_log.log_time FROM attendance_log JOIN students ON attendance_log.student_id = students.id', [], (err, rows) => {
+            if (err) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Database Error')
+                    .setDescription('Could not access the database.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            if (!rows.length) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xffa500)
+                    .setTitle('No Attendance Logged')
+                    .setDescription('No attendance logged yet.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            const logMessage = rows.map(row => `${row.name}: ${row.status} at ${row.log_time}`).join('\n');
+            const embed = new EmbedBuilder()
+                .setColor(0x00ff00)
+                .setTitle('Attendance Log')
+                .setDescription(logMessage);
+            interaction.reply({ embeds: [embed] });
+        });
+    } else if (commandName === 'reset_database') {
+        if (!interaction.member.roles.cache.has(DATABASE_RESET_ROLE_ID)) {
+            const embed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle('Permission Denied')
+                .setDescription('You do not have the required role to use this command.');
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        db.serialize(() => {
+            db.run('DELETE FROM students', (err) => {
+                if (err) {
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('Database Reset Failed')
+                        .setDescription('Failed to reset students.');
+                    return interaction.reply({ embeds: [embed] });
+                }
+            });
+            db.run('DELETE FROM attendance_log', (err) => {
+                if (err) {
+                    const embed = new EmbedBuilder()
+                        .setColor(0xff0000)
+                        .setTitle('Database Reset Failed')
+                        .setDescription('Failed to reset attendance log.');
+                    return interaction.reply({ embeds: [embed] });
+                }
+                const embed = new EmbedBuilder()
+                    .setColor(0x00ff00)
+                    .setTitle('Database Reset')
+                    .setDescription('Database has been reset.');
+                interaction.reply({ embeds: [embed] });
+            });
+        });
+    } else if (commandName === 'log_behavior') {
+        if (!interaction.member.roles.cache.has(TEACHER_ROLE_ID)) {
+            const embed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle('Permission Denied')
+                .setDescription('You do not have the required role to use this command.');
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        const studentName = options.getString('student_name');
+        const reason = options.getString('reason');
+        db.get('SELECT * FROM students WHERE name = ?', [studentName], (err, row) => {
+            if (err) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Database Error')
+                    .setDescription('Could not access the database.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            if (row) {
+                db.run('INSERT INTO behavior_log (student_id, reason) VALUES (?, ?)', [row.id, reason], (err) => {
+                    if (err) {
+                        const embed = new EmbedBuilder()
+                            .setColor(0xff0000)
+                            .setTitle('Behavior Log Failed')
+                            .setDescription('Failed to log behavior.');
+                        return interaction.reply({ embeds: [embed] });
+                    }
+                    const embed = new EmbedBuilder()
+                        .setColor(0x00ff00)
+                        .setTitle('Behavior Logged')
+                        .setDescription(`Logged behavior for ${studentName} with reason: ${reason}.`);
+                    interaction.reply({ embeds: [embed] });
+                });
+            } else {
+                const embed = new EmbedBuilder()
+                    .setColor(0xffa500)
+                    .setTitle('Student Not Found')
+                    .setDescription(`${studentName} is not in the database.`);
+                interaction.reply({ embeds: [embed] });
+            }
+        });
+    }
+});
+
+// Log in to Discord with your client's token
+client.login('MTMyMzExMTY1OTQyMTcwMDEwOA.G0M3DI.2XgQCPMf-V9l7eWmRYlMry412VXm66Yj3JivxI');
