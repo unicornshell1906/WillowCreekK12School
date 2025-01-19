@@ -1,37 +1,8 @@
-from flask import Flask
-from threading import Thread
-
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot is alive!"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# Call keep_alive function to start the Flask server
-keep_alive()
-
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-const express = require('express');
-const app = express();
-const port = 3000;  // Replit assigns a port to your project
+const axios = require('axios');
 
-// Set up a simple web server to prevent Replit from sleeping
-app.get('/', (req, res) => {
-  res.send('Bot is running...');
-});
-
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
 
 // Create a new client instance
 const client = new Client({
@@ -63,7 +34,6 @@ db.serialize(() => {
         FOREIGN KEY(student_id) REFERENCES students(id)
     )`);
 
-    // New table for behavior logs
     db.run(`CREATE TABLE IF NOT EXISTS behavior_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER,
@@ -72,11 +42,6 @@ db.serialize(() => {
         FOREIGN KEY(student_id) REFERENCES students(id)
     )`);
 });
-
-// Replace these with your actual role IDs
-const ADMIN_ROLE_ID = '1322315030645051392';
-const TEACHER_ROLE_ID = '1322991621804920942';
-const DATABASE_RESET_ROLE_ID = '1321184284765327423';
 
 // Register slash commands
 const commands = [
@@ -151,10 +116,14 @@ const commands = [
                 required: true
             }
         ]
+    },
+    {
+        name: 'show_behavior',
+        description: 'Show all students\' behavior logs'
     }
 ];
 
-const rest = new REST({ version: '10' }).setToken('MTMyMzExMTY1OTQyMTcwMDEwOA.G0M3DI.2XgQCPMf-V9l7eWmRYlMry412VXm66Yj3JivxI');
+const rest = new REST({ version: '10' }).setToken('MTMyMzExMTY1OTQyMTcwMDEwOA.G8Bqfo.xwo8kNGhdVgE8wNuuqGNUHPmO-EXA3uaq7QJhw');
 
 (async () => {
     try {
@@ -179,7 +148,7 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
 
     const { commandName, options, channelId } = interaction;
-    const logChannelId = '1323738463287115776'; // Replace with your log channel ID
+    const logChannelId = '1323738463287115776';
 
     // Log command usage
     if (channelId !== logChannelId) {
@@ -199,7 +168,7 @@ client.on('interactionCreate', async interaction => {
     }
 
     if (commandName === 'add_student') {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE_ID)) {
+        if (!interaction.member.roles.cache.has('1322315030645051392')) {
             const embed = new EmbedBuilder()
                 .setColor(0xff0000)
                 .setTitle('Permission Denied')
@@ -240,7 +209,7 @@ client.on('interactionCreate', async interaction => {
             }
         });
     } else if (commandName === 'remove_student') {
-        if (!interaction.member.roles.cache.has(ADMIN_ROLE_ID)) {
+        if (!interaction.member.roles.cache.has('1322315030645051392')) {
             const embed = new EmbedBuilder()
                 .setColor(0xff0000)
                 .setTitle('Permission Denied')
@@ -314,7 +283,7 @@ client.on('interactionCreate', async interaction => {
             }
         });
     } else if (commandName === 'log_attendance') {
-        if (!interaction.member.roles.cache.has(TEACHER_ROLE_ID)) {
+        if (!interaction.member.roles.cache.has('1322991621804920942')) {
             const embed = new EmbedBuilder()
                 .setColor(0xff0000)
                 .setTitle('Permission Denied')
@@ -379,7 +348,7 @@ client.on('interactionCreate', async interaction => {
             interaction.reply({ embeds: [embed] });
         });
     } else if (commandName === 'reset_database') {
-        if (!interaction.member.roles.cache.has(DATABASE_RESET_ROLE_ID)) {
+        if (!interaction.member.roles.cache.has('1329154896628289546')) {
             const embed = new EmbedBuilder()
                 .setColor(0xff0000)
                 .setTitle('Permission Denied')
@@ -413,7 +382,7 @@ client.on('interactionCreate', async interaction => {
             });
         });
     } else if (commandName === 'log_behavior') {
-        if (!interaction.member.roles.cache.has(TEACHER_ROLE_ID)) {
+        if (!interaction.member.roles.cache.has('1322991621804920942')) {
             const embed = new EmbedBuilder()
                 .setColor(0xff0000)
                 .setTitle('Permission Denied')
@@ -454,8 +423,43 @@ client.on('interactionCreate', async interaction => {
                 interaction.reply({ embeds: [embed] });
             }
         });
+    } 
+    
+else if (commandName === 'show_behavior') {
+        if (!interaction.member.roles.cache.has('1322991621804920942')) {
+            const embed = new EmbedBuilder()
+                .setColor(0xff0000)
+                .setTitle('Permission Denied')
+                .setDescription('You do not have the required role to use this command.');
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        db.all('SELECT students.name, behavior_log.reason, behavior_log.log_time FROM behavior_log JOIN students ON behavior_log.student_id = students.id', [], (err, rows) => {
+            if (err) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xff0000)
+                    .setTitle('Database Error')
+                    .setDescription('Could not access the database.');
+                return interaction.reply({ embeds: [embed] });
+            }
+                     if (!rows.length) {
+                const embed = new EmbedBuilder()
+                    .setColor(0xffa500)
+                    .setTitle('No Behavior Logs')
+                    .setDescription('No behavior logs found for any students.');
+                return interaction.reply({ embeds: [embed] });
+            }
+            const behaviorLogs = rows
+                .map(row => `${row.name}: ${row.reason} at ${row.log_time}`)
+                .join('\n');
+            const embed = new EmbedBuilder()
+                .setColor(0x00ff00)
+                .setTitle('Behavior Logs')
+                .setDescription(behaviorLogs);
+            interaction.reply({ embeds: [embed] });
+        });
     }
 });
 
-// Log in to Discord with your client's token
-client.login('MTMyMzExMTY1OTQyMTcwMDEwOA.G0M3DI.2XgQCPMf-V9l7eWmRYlMry412VXm66Yj3JivxI');
+// Log in to Discord
+client.login('MTMyMzExMTY1OTQyMTcwMDEwOA.G8Bqfo.xwo8kNGhdVgE8wNuuqGNUHPmO-EXA3uaq7QJhw');
